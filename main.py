@@ -3,6 +3,8 @@ import os
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware import Middleware
 from sqlalchemy.orm import Session
 import bcrypt
 
@@ -15,7 +17,17 @@ from crud import get_listings, create_listing
 # Создаем таблицы
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(
+    middleware=[
+        Middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    ]
+)
 
 # Зависимость - сессия базы
 def get_db():

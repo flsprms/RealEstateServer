@@ -1,9 +1,11 @@
 import base64
 import os
+from uuid import uuid4
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import bcrypt
 
@@ -32,6 +34,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+class ListingPhotoBase64(BaseModel):
+    base64_data: str  # строка base64 (без data:image/jpeg;base64, если что — обрежем)
+    extension: str = ".jpg"  # или ".png" и т.п.
 
 @app.get("/listings/", response_model=list[ListingPreview])
 def read_listings(skip: int = 1, limit: int = 100, db: Session = Depends(get_db)):
@@ -263,15 +269,26 @@ def get_listing_photo(listing_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/listing-photo/{listing_id}")
-def upload_listing_photo(listing_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_listing_photo(listing_id: int, photo_data: ListingPhotoBase64, db: Session = Depends(get_db)):
     listing = db.query(Listing).filter(Listing.id == listing_id).first()
     if not listing:
         raise HTTPException(status_code=404, detail="Listing not found")
 
     # Создаём путь к файлу
-    filename = f"static/listings/listing_{listing_id}_{len(listing.photos)+1}{os.path.splitext(file.filename)[1]}"
+    if "," in photo_data.base64_data:
+        _, base64_str = photo_data.base64_data.split(",", 1)
+    else:
+        base64_str = photo_data.base64_data
+
+    try:
+        image_bytes = base64.b64decode(base64_str)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 string")
+    filename = f"static/listings/listing_{listing_id}_{uuid4().hex}{photo_data.extension}"
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
     with open(filename, "wb") as image_file:
-        image_file.write(file.file.read())
+        image_file.write(image_bytes)
 
     new_photo = ListingPhoto(
         listing_id=listing_id,
